@@ -83,7 +83,7 @@ defmodule DiffieTest do
              "Added:\n> #{String.replace(insert, sep, "\n> ")}"
     end
 
-    test "applies the printing function" do
+    test "applies the transform function, to each change separately" do
       part_1 = "One is the loneliest number\nthat you'll ever do."
       insert = "You put your\nleft foot in..."
       expected_insert =

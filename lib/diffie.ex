@@ -1,51 +1,41 @@
 defmodule Diffie do
-
   def diff_report(old, new, opts \\ %{})
 
-  def diff_report(old, new, opts) when is_binary(old) and is_binary(new) do
+  def diff_report(old_str, new_str, opts)
+      when is_binary(old_str) and is_binary(new_str) do
     split_on = opts[:split_on] || "\n"
-    diff_report(String.split(old, split_on),
-                String.split(new, split_on),
+    diff_report(String.split(old_str, split_on),
+                String.split(new_str, split_on),
                 opts)
   end
 
-  def diff_report(old, new, opts) when is_list(old) and is_list(new) do
-    diff_list(old, new)
-    |> make_report(opts)
+  def diff_report(old_list, new_list, opts)
+      when is_list(old_list) and is_list(new_list) do
+    diff_list(old_list, new_list)
+    |> make_report(opts[:transform])
   end
 
-  def diff_list(old, new) do
-    List.myers_difference(old, new)
+  def diff_list(old_list, new_list) do
+    List.myers_difference(old_list, new_list)
     |> fix_changes
   end
 
-  # change sequences of "del, ins" nodes into "old, new",
-  # when preceded or followed by an "eq".
-  def fix_changes(results, acc \\ [])
-  # sequence at start -- no eq on the front.
-  # keep the later eq in case it intro's another sequence.
-  # logic: it must be either at the start, or after another eq,
-  # because if there were an ins or del before it, with no eq,
-  # the inserted or deleted string would have been tacked onto
-  # this insertion or deletion.
-  def fix_changes([{:del, del},{:ins, ins},{:eq, eq}|rest], acc) do
-    fix_changes([{:eq, eq}|rest], [{:new, ins},{:old, del}|acc])
+  # change sequences of "del, ins" nodes (or vice-versa) into "old, new"
+  defp fix_changes(results, acc \\ [])
+  defp fix_changes([{:del, del},{:ins, ins}|rest], acc) do
+    fix_changes(rest, [{:new, ins},{:old, del}|acc])
   end
-  # sequence in the middle or end
-  # logic: it must be either at the end, or before another eq,
-  # because if there were an ins or del after it, with no eq,
-  # the inserted or deleted string would have been tacked onto
-  # this insertion or deletion.
-  def fix_changes([{:eq, eq},{:del, del},{:ins, ins}|rest], acc) do
-    fix_changes(rest, [{:new, ins},{:old, del},{:eq, eq}|acc])
+  defp fix_changes([{:ins, ins},{:del, del}|rest], acc) do
+    fix_changes(rest, [{:new, ins},{:old, del}|acc])
   end
-  def fix_changes([head|rest], acc), do: fix_changes(rest, [head|acc])
-  def fix_changes([], acc), do: acc |> Enum.reverse
+  # we could probably dump head here, but future features may need it
+  defp fix_changes([head|rest], acc), do: fix_changes(rest, [head|acc])
+  defp fix_changes([], acc), do: Enum.reverse(acc)
 
-  def make_report(results, opts, acc \\ [])
-  def make_report([{:eq, _}|rest], opts, acc), do: make_report(rest, opts, acc)
-  def make_report([{comp, items}|rest], opts, acc) do
-    transform_func = opts[:transform] || &to_string/1
+  defp make_report(results, xform, acc \\ [])
+  defp make_report([{:eq, _}|rest], xform, acc), do:
+    make_report(rest, xform, acc)
+  defp make_report([{comp, items}|rest], xform, acc) do
     [word, sym] =
       case comp do
         :del -> ["Removed", "<"]
@@ -56,9 +46,18 @@ defmodule Diffie do
       end
     diffs =
       items
-      |> Enum.map(fn item -> "#{sym} #{transform_func.(item)}" end)
+      |> Enum.map(fn item -> "#{sym} #{transform(item, xform)}" end)
       |> Enum.join("\n")
-    make_report(rest, opts, ["#{word}:\n#{diffs}" | acc])
+    make_report(rest, xform, ["#{word}:\n#{diffs}" | acc])
   end
-  def make_report([], _, acc), do: acc |> Enum.reverse |> Enum.join("\n\n")
+  defp make_report([], _, acc), do: acc |> Enum.reverse |> Enum.join("\n\n")
+
+  defp transform(item, nil) do
+    cond do
+      is_binary(item)             -> item
+      String.Chars.impl_for(item) -> to_string(item)
+      true                        -> inspect(item)
+    end
+  end
+  defp transform(item, xform), do: xform.(item)
 end
