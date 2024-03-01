@@ -10,7 +10,9 @@ defmodule Diffie.MixProject do
       description: description(),
       package: package(),
       deps: deps(),
-      preferred_cli_env: [muzak: :test]
+      name: "Diffie",
+      source_url: "https://github.com/davearonson/diffie/",
+      docs: [main: "Diffie", extras: ["README.md"]]
     ]
   end
 
@@ -23,28 +25,24 @@ defmodule Diffie.MixProject do
 
   defp description do
     """
-    Library for making textual reports, similar to the `diff` command-line
-    utility, of the differences between two lists of objects
-    (of whatever type), or two strings, broken up on newlines
-    (or any other substring).  Also can return a list of differences between
-    two lists of objects, as a list rather than a textual report, but still
-    marked with not only additions and removals but also _changes_,
-    marking the old and new versions.
+    Library for making textual reports, similar to a simplified
+    `diff` command-line utility, of the differences between
+    two strings, or two lists of objects (of whatever type).
     """
   end
   defp package do
     [
       files: ["lib", "mix.exs", "README*", "LICENSE*"],
-      maintainers: ["Krzysztof Kempiński"],
-      licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/kkempin/exiban"}
+      maintainers: ["Dave Aronson"],
+      licenses: ["BSD-3-Clause"],
+      links: %{"GitHub" => "https://github.com/davearonson/diffie"}
     ]
   end
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:muzak, "~> 1.0", only: :test}
+      {:ex_doc, "~> 0.31", only: :dev, runtime: false},
     ]
   end
 end
