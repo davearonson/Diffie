@@ -4,7 +4,7 @@ defmodule Diffie.MixProject do
   def project do
     [
       app: :diffie,
-      version: "0.1.0",
+      version: "0.2.0",
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
       description: description(),
@@ -28,6 +28,7 @@ defmodule Diffie.MixProject do
     Library for making textual reports, similar to a simplified
     `diff` command-line utility, of the differences between
     two strings, or two lists of objects (of whatever type).
+    NOT FOR DIFFIE-HELLMAN KEY EXCHANGE!
     """
   end
   defp package do

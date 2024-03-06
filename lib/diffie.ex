@@ -8,7 +8,7 @@ defmodule Diffie do
   """
 
   @doc ~S"""
-  `diff_report(old, new, opts \\ %{})`
+  `diff_report(old, new, opts \\ [])`
 
   `diff_report` returns a string
   containing a report (hence the name),
@@ -16,16 +16,16 @@ defmodule Diffie do
   of the differences between the two strings, or two lists.
 
   Given two strings, by default it works line by line,
-  but you can supply a different string (or regex) to split on,
-  as `opts[:split_on]`.
-  You can also supply a transformation function,
-  to be applied to each substring, as `opts[:transform]`.
+  and is case-sensitive,
+  but you can change this with options, as follows:
 
-  Given two _lists_,
-  the only option used is `opts[:transform]`.
-  If you specify this, then that transformation will be applied to
-  each individual changed (added, deleted, replaced, or replacing) item,
-  not the _list_ of them.
+  - `:ignore_case` - (boolean) be case-insensitive when comparing the strings.  Does not get applied to strings _within objects_.  If you want that, you will have to use a custom transformation function (see below).  Also applicable to the version that takes two lists, _if_ you pass it two lists _of strings_.
+
+  - `:omit_deletes` - (boolean) omit deleted items, and old versions of changed items.  Also applicable to the version that takes two lists.
+
+  - `:split_on` - (string or regex) split strings on this, not \n.
+
+  - `:transform` - (function reference) function to apply to items in the report.  Also applicable to the version that takes two lists.
 
   If you do _not_ supply a transformation:
   - strings will be handled as-is,
@@ -55,6 +55,9 @@ defmodule Diffie do
   iex> Diffie.diff_report("bar", "baz", split_on: "")
   "Changed:\n< r\n\nInto:\n> z"
 
+  iex> Diffie.diff_report("foo\nbar\nbaz", "foo\nboo\nbaz", omit_deletes: true)
+  "Into:\n> boo"  # note removal of "Changed:\n< r\n\n"
+
   iex> Diffie.diff_report("foo bar\nbaz quux", "fox bear\nbaz quix",
   ...>                    split_on: ~r{\s})
   "Changed:\n< foo\n< bar\n\nInto:\n> fox\n> bear\n\nChanged:\n< quux\n\nInto:\n> quix"
@@ -67,6 +70,11 @@ defmodule Diffie do
   ...>                    split_on: ~r/\s/, transform: &String.upcase/1)
   "Changed:\n< THE\n< QUICK\n< BROWN\n\nInto:\n> THAT\n\nAdded:\n> QUICKLY\n\nChanged:\n< LAZY\n< DOG.\n\nInto:\n> DIG!"
 
+  iex> Diffie.diff_report("The quick brown fox jumps over the lazy dog.",
+  ...>                    "That fox jumps quickly over the dig!",
+  ...>                    split_on: ~r/\s/, omit_deletes: true)
+  "Into:\n> That\n\nAdded:\n> quickly\n\nInto:\n> dig!"
+
   iex> Diffie.diff_report([1,2], [1,2,3])
   "Added:\n> 3"
 
@@ -75,6 +83,9 @@ defmodule Diffie do
 
   iex> Diffie.diff_report([1,2,3], [1,2,5])
   "Changed:\n< 3\n\nInto:\n> 5"
+
+  iex> Diffie.diff_report([1,2,3], [1,2,5], omit_deletes: true)
+  "Into:\n> 5"  # note removal of "Changed:\n< 3\n\n"
 
   iex> Diffie.diff_report([1,2], [1,2,3], transform: fn x->x*2 end)
   "Added:\n> 6"
@@ -103,7 +114,7 @@ defmodule Diffie do
   "Added:\n> Bob"
   ```
   """
-  def diff_report(old, new, opts \\ %{})
+  def diff_report(old, new, opts \\ [])
 
   def diff_report(old_str, new_str, opts)
       when is_binary(old_str) and is_binary(new_str) do
@@ -115,21 +126,51 @@ defmodule Diffie do
 
   def diff_report(old_list, new_list, opts)
       when is_list(old_list) and is_list(new_list) do
-    List.myers_difference(old_list, new_list)
-    |> fix_changes
-    |> make_report(opts[:transform])
+    if opts[:ignore_case] && ! (old_list |> hd |> is_binary) do
+      "ERROR: you said to ignore case, but the list is not of strings!"
+    else
+      List.myers_difference(old_list, new_list)
+      |> fix_changes([ignore_case:  !!opts[:ignore_case],
+                        omit_deletes: !!opts[:omit_deletes]])
+      |> make_report(opts[:transform])
+    end
   end
 
   # change sequences of "del, ins" nodes (or vice-versa) into "old, new"
-  defp fix_changes(results, acc \\ [])
-  defp fix_changes([{:del, del},{:ins, ins}|rest], acc) do
-    fix_changes(rest, [{:new, ins},{:old, del}|acc])
+  # (or just "new" if user says to omit old/deleted items)
+  defp fix_changes(results, opts, acc \\ [])
+  # TODO: clean up this complex mess
+  defp fix_changes([head|[next|rest]], opts, acc) do
+    with [dels, inss] <- get_del_ins_pair(head, next) do
+      if really_different(dels, inss, opts) do
+        if opts[:omit_deletes] do
+          fix_changes(rest, opts, [{:new, inss}|acc])
+        else
+          fix_changes(rest, opts, [{:new, inss},{:old, dels}|acc])
+        end
+      else
+        fix_changes(rest, opts, acc)
+      end
+    else
+      nil -> fix_changes([next|rest], opts, [head|acc])
+    end
   end
-  defp fix_changes([{:ins, ins},{:del, del}|rest], acc) do
-    fix_changes(rest, [{:new, ins},{:old, del}|acc])
+  defp fix_changes([last], _opts, acc), do: [last|acc] |> Enum.reverse
+  defp fix_changes([],     _opts, acc), do: acc |> Enum.reverse
+
+  defp get_del_ins_pair({:del, dels}, {:ins, inss}), do: [dels, inss]
+  defp get_del_ins_pair({:ins, inss}, {:del, dels}), do: [dels, inss]
+  defp get_del_ins_pair(_, _), do: nil
+
+  defp really_different(del, del, _opts), do: false
+  defp really_different(del, ins, opts) when (ins |> hd |> is_binary) do
+    if opts[:ignore_case] do
+      Enum.map(del, &String.downcase/1) != Enum.map(ins, &String.downcase/1)
+    else
+      true
+    end
   end
-  defp fix_changes([head|rest], acc), do: fix_changes(rest, [head|acc])
-  defp fix_changes([], acc), do: Enum.reverse(acc)
+  defp really_different(_del, _ins, _opts), do: true
 
   defp make_report(results, transform_func, acc \\ [])
   defp make_report([{:eq, _}|rest], tf, acc), do: make_report(rest, tf, acc)

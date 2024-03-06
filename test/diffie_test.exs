@@ -8,6 +8,11 @@ defmodule DiffieTest do
       assert Diffie.diff_report(str, str) == ""
     end
 
+    test "can ignore case" do
+      str = "Same as it ever was,\nsame as it ever was!"
+      assert Diffie.diff_report(str, String.upcase(str), ignore_case: true) == ""
+    end
+
     test "detects inserted lines" do
       part_1 = "One is the loneliest number\nthat you'll ever do."
       insert = "You put your\nleft foot in..."
@@ -26,22 +31,18 @@ defmodule DiffieTest do
       assert Diffie.diff_report(str_1, str_2) == "Removed:\n< #{String.replace(remove, "\n", "\n< ")}"
     end
 
-    test "detects changed lines AT THE START" do
-      old = "When I get older,\nlosing my hair..."
-      new = "I got a\nnew attitude!"
-      const = "Oh, you can't go back\nto Constantinople."
-      str_1 = "#{old}\n#{const}"
-      str_2 = "#{new}\n#{const}"
-      assert Diffie.diff_report(str_1, str_2) == """
-      Changed:
-      < #{String.replace(old, "\n", "\n< ")}
-
-      Into:
-      > #{String.replace(new, "\n", "\n> ")}
-      """ |> String.trim("\n")
+    test "detects inserted AND removed lines" do
+      part_1 = "One is the loneliest number\nthat you'll ever do."
+      insert = "You put your\nleft foot in..."
+      part_2 = "It takes two, baby,\nme and you!"
+      remove = "You take your\nleft foot out..."
+      part_3 = "Gimme three steps\ngimme three steps mister..."
+      str_1 = "#{part_1}\n#{part_2}\n#{remove}\n#{part_3}"
+      str_2 = "#{part_1}\n#{insert}\n#{part_2}\n#{part_3}"
+      assert Diffie.diff_report(str_1, str_2) == "Added:\n> #{String.replace(insert, "\n", "\n> ")}\n\nRemoved:\n< #{String.replace(remove, "\n", "\n< ")}"
     end
 
-    test "detects changed lines IN THE MIDDLE" do
+    test "detects changed lines" do
       old = "When I get older,\nlosing my hair..."
       new = "I got a\nnew attitude!"
       part_1 = "One is the loneliest number\nthat you'll ever do."
@@ -57,16 +58,14 @@ defmodule DiffieTest do
       """ |> String.trim("\n")
     end
 
-    test "detects changed lines AT THE END" do
+    test "omits originals of changed lines if asked" do
       old = "When I get older,\nlosing my hair..."
       new = "I got a\nnew attitude!"
-      const = "Oh, you can't go back\nto Constantinople."
-      str_1 = "#{const}\n#{old}"
-      str_2 = "#{const}\n#{new}"
-      assert Diffie.diff_report(str_1, str_2) == """
-      Changed:
-      < #{String.replace(old, "\n", "\n< ")}
-
+      part_1 = "One is the loneliest number\nthat you'll ever do."
+      part_2 = "It takes two, baby,\nme and you!"
+      str_1 = "#{part_1}\n#{old}\n#{part_2}"
+      str_2 = "#{part_1}\n#{new}\n#{part_2}"
+      assert Diffie.diff_report(str_1, str_2, omit_deletes: true) == """
       Into:
       > #{String.replace(new, "\n", "\n> ")}
       """ |> String.trim("\n")
