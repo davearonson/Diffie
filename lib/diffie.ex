@@ -21,7 +21,7 @@ defmodule Diffie do
 
   - `:ignore_case` - (boolean) be case-insensitive when comparing the strings.  Does not get applied to strings _within objects_.  If you want that, you will have to use a custom transformation function (see below).  Also applicable to the version that takes two lists, _if_ you pass it two lists _of strings_.
 
-  - `:omit_deletes` - (boolean) omit deleted items, and old versions of changed items.  Also applicable to the version that takes two lists.
+  - `:omit_deletes` - (boolean) omit deleted items, and old versions of changed items.  Also applicable to the version that takes two lists.  Causes the new version of a changed item to be marked with "Updated" rather than "Into".
 
   - `:split_on` - (string or regex) split strings on this, not \n.
 
@@ -56,7 +56,7 @@ defmodule Diffie do
   "Changed:\n< r\n\nInto:\n> z"
 
   iex> Diffie.diff_report("foo\nbar\nbaz", "foo\nboo\nbaz", omit_deletes: true)
-  "Into:\n> boo"  # note removal of "Changed:\n< r\n\n"
+  "Updated:\n> boo"  # note removal of "Changed:\n< r\n\n" and different marker
 
   iex> Diffie.diff_report("foo bar\nbaz quux", "fox bear\nbaz quix",
   ...>                    split_on: ~r{\s})
@@ -73,7 +73,7 @@ defmodule Diffie do
   iex> Diffie.diff_report("The quick brown fox jumps over the lazy dog.",
   ...>                    "That fox jumps quickly over the dig!",
   ...>                    split_on: ~r/\s/, omit_deletes: true)
-  "Into:\n> That\n\nAdded:\n> quickly\n\nInto:\n> dig!"
+  "Updated:\n> That\n\nAdded:\n> quickly\n\nUpdated:\n> dig!"
 
   iex> Diffie.diff_report([1,2], [1,2,3])
   "Added:\n> 3"
@@ -85,7 +85,7 @@ defmodule Diffie do
   "Changed:\n< 3\n\nInto:\n> 5"
 
   iex> Diffie.diff_report([1,2,3], [1,2,5], omit_deletes: true)
-  "Into:\n> 5"  # note removal of "Changed:\n< 3\n\n"
+  "Updated:\n> 5"  # note removal of "Changed:\n< 3\n\n", and different marker
 
   iex> Diffie.diff_report([1,2], [1,2,3], transform: fn x->x*2 end)
   "Added:\n> 6"
@@ -144,7 +144,7 @@ defmodule Diffie do
     with [dels, inss] <- get_del_ins_pair(head, next) do
       if really_different(dels, inss, opts) do
         if opts[:omit_deletes] do
-          fix_changes(rest, opts, [{:new, inss}|acc])
+          fix_changes(rest, opts, [{:upd, inss}|acc])
         else
           fix_changes(rest, opts, [{:new, inss},{:old, dels}|acc])
         end
@@ -178,9 +178,10 @@ defmodule Diffie do
     [word, sym] =
       case comp do
         :del -> ["Removed", "<"]
-        :ins -> ["Added", ">"]
+        :ins -> ["Added",   ">"]
         :old -> ["Changed", "<"]
-        :new -> ["Into", ">"]
+        :new -> ["Into",    ">"]
+        :upd -> ["Updated", ">"]
         _    -> ["Unknown comparison '#{comp}'", "?"]
       end
     diffs =

@@ -4,7 +4,7 @@ defmodule Diffie.MixProject do
   def project do
     [
       app: :diffie,
-      version: "0.2.0",
+      version: "0.3.0",
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
       description: description(),
@@ -12,7 +12,8 @@ defmodule Diffie.MixProject do
       deps: deps(),
       name: "Diffie",
       source_url: "https://github.com/davearonson/diffie/",
-      docs: [main: "Diffie", extras: ["README.md"]]
+      docs: [main: "Diffie", extras: ["README.md"]],
+      preferred_cli_env: [muzak: :test]      
     ]
   end
 
@@ -44,6 +45,7 @@ defmodule Diffie.MixProject do
   defp deps do
     [
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
+      {:muzak, "~> 1.1", only: :test}
     ]
   end
 end

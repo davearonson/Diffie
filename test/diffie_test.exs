@@ -66,7 +66,7 @@ defmodule DiffieTest do
       str_1 = "#{part_1}\n#{old}\n#{part_2}"
       str_2 = "#{part_1}\n#{new}\n#{part_2}"
       assert Diffie.diff_report(str_1, str_2, omit_deletes: true) == """
-      Into:
+      Updated:
       > #{String.replace(new, "\n", "\n> ")}
       """ |> String.trim("\n")
     end
