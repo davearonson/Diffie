@@ -75,17 +75,30 @@ defmodule Diffie do
   ...>                    split_on: ~r/\s/, omit_deletes: true)
   "Updated:\n> That\n\nAdded:\n> quickly\n\nUpdated:\n> dig!"
 
+  iex> Diffie.diff_report("The quick brown fox jumps over the lazy dog",
+  ...>                    "That fox jumps quickly",
+  ...>                    split_on: ~r/\s/, omit_deletes: true)
+  "Updated:\n> That\n\nUpdated:\n> quickly"
+
+  iex> Diffie.diff_report("The quick brown fox jumps over the lazy dog",
+  ...>                    "That fox jumps quickly over",
+  ...>                    split_on: ~r/\s/, omit_deletes: true)
+  "Updated:\n> That\n\nAdded:\n> quickly"
+
   iex> Diffie.diff_report([1,2], [1,2,3])
   "Added:\n> 3"
 
   iex> Diffie.diff_report([1,2,3], [1,2])
   "Removed:\n< 3"
 
-  iex> Diffie.diff_report([1,2,3], [1,2,5])
-  "Changed:\n< 3\n\nInto:\n> 5"
+  iex> Diffie.diff_report([1,2,3,4,6], [1,2,5])
+  "Changed:\n< 3\n< 4\n< 6\n\nInto:\n> 5"
 
-  iex> Diffie.diff_report([1,2,3], [1,2,5], omit_deletes: true)
-  "Updated:\n> 5"  # note removal of "Changed:\n< 3\n\n", and different marker
+  iex> Diffie.diff_report([1,2,3,4,6], [1,2,5,6,7], omit_deletes: true)
+  "Updated:\n> 5\n\nAdded:\n> 7"  # note removal of "Changed:\n< 3\n\n", and different marker
+
+  iex> Diffie.diff_report([1,2,3], [1,2], omit_deletes: true)
+  ""
 
   iex> Diffie.diff_report([1,2], [1,2,3], transform: fn x->x*2 end)
   "Added:\n> 6"
@@ -130,47 +143,77 @@ defmodule Diffie do
       "ERROR: you said to ignore case, but the list is not of strings!"
     else
       List.myers_difference(old_list, new_list)
-      |> fix_changes([ignore_case:  !!opts[:ignore_case],
-                        omit_deletes: !!opts[:omit_deletes]])
+      |> fix_diffs(%{ignore_case:  !!opts[:ignore_case],
+                     omit_deletes: !!opts[:omit_deletes]},
+                   [])
       |> make_report(opts[:transform])
     end
   end
 
-  # change sequences of "del, ins" nodes (or vice-versa) into "old, new"
-  # (or just "new" if user says to omit old/deleted items)
-  defp fix_changes(results, opts, acc \\ [])
-  # TODO: clean up this complex mess
-  defp fix_changes([head|[next|rest]], opts, acc) do
-    with [dels, inss] <- get_del_ins_pair(head, next) do
-      if really_different(dels, inss, opts) do
-        if opts[:omit_deletes] do
-          fix_changes(rest, opts, [{:upd, inss}|acc])
-        else
-          fix_changes(rest, opts, [{:new, inss},{:old, dels}|acc])
-        end
-      else
-        fix_changes(rest, opts, acc)
-      end
+  # if we have a del and an ins, and we're omitting deletes,
+  # process as an update
+  defp fix_diffs([del={:del, _}|[ins={:ins, _}|rest]], opts, acc) do
+    process_update(rest, opts, del, ins, acc)
+  end
+
+  # same if the other way round
+  defp fix_diffs([ins={:ins, _}|[del={:del, _}|rest]], opts, acc) do
+    process_update(rest, opts, del, ins, acc)
+  end
+
+  # else if we have a delete and we're omitting them, just move on
+  defp fix_diffs([{:del, _}|rest], opts=%{omit_deletes: true}, acc) do
+    fix_diffs(rest, opts, acc)
+  end
+
+  # else if we have a delete (since we're not omitting them), do it
+  defp fix_diffs([del={:del, _}|rest], opts, acc) do
+    fix_diffs(rest, opts, [del|acc])
+  end
+
+  # same for insert
+  defp fix_diffs([ins={:ins, _}|rest], opts, acc) do
+    fix_diffs(rest, opts, [ins|acc])
+  end
+
+  # if we have an eq, just move on
+  defp fix_diffs([{:eq, _}|rest], opts, acc) do
+    fix_diffs(rest, opts, acc)
+  end
+
+  # else if end of list, we're done
+  defp fix_diffs([], _opts, acc), do: Enum.reverse(acc)
+
+  defp process_update(rest, opts, {:del, dels}, {:ins, inss}, acc) do
+    new_acc = cond do
+      really_same(dels, inss, opts) ->
+        acc
+      opts[:omit_deletes] ->
+        [{:upd, inss}|acc]
+      true ->
+        [{:new, inss}|[{:old, dels}|acc]]
+    end
+    fix_diffs(rest, opts, new_acc)
+  end
+
+  defp really_same(same, same, _opts), do: true
+  defp really_same(dels, inss, %{ignore_case: true}) do
+    if Enum.count(dels) == Enum.count(inss) do
+      downcases_match(dels, inss)
     else
-      nil -> fix_changes([next|rest], opts, [head|acc])
+      false
     end
   end
-  defp fix_changes([last], _opts, acc), do: [last|acc] |> Enum.reverse
-  defp fix_changes([],     _opts, acc), do: acc |> Enum.reverse
+  defp really_same(_, _, _), do: false
 
-  defp get_del_ins_pair({:del, dels}, {:ins, inss}), do: [dels, inss]
-  defp get_del_ins_pair({:ins, inss}, {:del, dels}), do: [dels, inss]
-  defp get_del_ins_pair(_, _), do: nil
-
-  defp really_different(del, del, _opts), do: false
-  defp really_different(del, ins, opts) when (ins |> hd |> is_binary) do
-    if opts[:ignore_case] do
-      Enum.map(del, &String.downcase/1) != Enum.map(ins, &String.downcase/1)
+  defp downcases_match([dhead|drest], [ihead|irest]) do
+    if String.downcase(dhead) == String.downcase(ihead) do
+      downcases_match(drest, irest)
     else
-      true
+      false
     end
   end
-  defp really_different(_del, _ins, _opts), do: true
+  defp downcases_match([], []), do: true
 
   defp make_report(results, transform_func, acc \\ [])
   defp make_report([{:eq, _}|rest], tf, acc), do: make_report(rest, tf, acc)
