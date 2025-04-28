@@ -23,6 +23,8 @@ defmodule Diffie do
 
   - `:omit_deletes` - (boolean) omit deleted items, and old versions of changed items.  Also applicable to the version that takes two lists.  Causes the new version of a changed item to be marked with "Updated" rather than "Into".
 
+  - `:omit_moves` - (boolean) omit moved items.  Also applicable to the version that takes two lists.  At this time this does not work properly in conjunction with `ignore_case`, and it all depends on what `List.myers_difference` sees as the whole added or removed chunk.
+
   - `:split_on` - (string or regex) split strings on this, not \n.
 
   - `:transform` - (function reference) function to apply to items in the report.  Also applicable to the version that takes two lists.
@@ -85,6 +87,11 @@ defmodule Diffie do
   ...>                    split_on: ~r/\s/, omit_deletes: true)
   "Updated:\n> That\n\nAdded:\n> quickly"
 
+  iex> Diffie.diff_report("alpha bravo charlie delta",
+  ...>                    "alpha charlie bravo delta",
+  ...>                    split_on: " ", omit_moves: true)
+  ""
+
   iex> Diffie.diff_report([1,2], [1,2,3])
   "Added:\n> 3"
 
@@ -98,6 +105,11 @@ defmodule Diffie do
   "Updated:\n> 5\n\nAdded:\n> 7"  # note removal of "Changed:\n< 3\n\n", and different marker
 
   iex> Diffie.diff_report([1,2,3], [1,2], omit_deletes: true)
+  ""
+
+  iex> Diffie.diff_report([1, 2, 3, 4, 5],
+  ...>                    [1, 2, 5, 3, 4],
+  ...>                    omit_moves: true)
   ""
 
   iex> Diffie.diff_report([1,2], [1,2,3], transform: fn x->x*2 end)
@@ -129,6 +141,8 @@ defmodule Diffie do
   """
   def diff_report(old, new, opts \\ [])
 
+  # if it's two binaries, split them (on whatever we're supposed to),
+  # and hand the results over to the two-lists version
   def diff_report(old_str, new_str, opts)
       when is_binary(old_str) and is_binary(new_str) do
     split_on = opts[:split_on] || "\n"
@@ -143,6 +157,7 @@ defmodule Diffie do
       "ERROR: you said to ignore case, but the list is not of strings!"
     else
       List.myers_difference(old_list, new_list)
+      |> maybe_remove_moves(!!opts[:omit_moves])
       |> fix_diffs(%{ignore_case:  !!opts[:ignore_case],
                      omit_deletes: !!opts[:omit_deletes]},
                    [])
@@ -150,8 +165,28 @@ defmodule Diffie do
     end
   end
 
-  # if we have a del and an ins, and we're omitting deletes,
-  # process as an update
+  defp maybe_remove_moves(diffs, false), do: diffs
+  defp maybe_remove_moves(diffs, true), do: remove_moves(diffs, diffs, [])
+
+  defp remove_moves([diff={:eq, _}|rest], all_diffs, acc) do
+    remove_moves(rest, all_diffs, [diff|acc])
+  end
+  # TODO: make this work properly with ignore_case!
+  # TODO MAYBE EVENTUALLY: make sure it's a 1-1 correspondence
+  defp remove_moves([head|rest], all_diffs, acc) do
+    target = opposite_action(head)
+    if Enum.member?(all_diffs, target) do
+      remove_moves(rest, all_diffs, acc)
+    else
+      remove_moves(rest, all_diffs, [head|acc])
+    end
+  end
+  defp remove_moves([], _all_diffs, acc), do: Enum.reverse(acc)
+
+  defp opposite_action({:del, stuff}), do: {:ins, stuff}
+  defp opposite_action({:ins, stuff}), do: {:del, stuff}
+
+  # if we have a del and an ins, process as an update
   defp fix_diffs([del={:del, _}|[ins={:ins, _}|rest]], opts, acc) do
     process_update(rest, opts, del, ins, acc)
   end

@@ -9,3 +9,5 @@
 2024-12-02: v0.3.1; fix bugs that fails to omit some deletions, at the end
 
 2024-12-08 v0.3.2; fix more bugs in deletion omission, revamping how that all works
+
+2025-04-28 v0.4.0; add :omit_moves option.
